@@ -1,28 +1,34 @@
 # =============================================================================
-# 浜戞瀯寤恒€屾湭绛惧悕鐪熸満 IPA銆?#
-# 鏀惧埌浠撳簱鐨勶細  .github/workflows/ios-unsigned-ipa.yml
+# 云构建「未签名真机 IPA」
 #
-# 浜х墿锛欸outouJunshi-unsigned.ipa锛圥ayload/GoutouJunshi.app锛宎rm64锛宒evice 鏋勫缓锛?#       鍖呮湰韬笉鑳界洿瑁?iPhone锛岄渶瑕?Sideloadly / AltStore 鐢ㄤ綘鑷繁鐨?Apple ID
-#       閲嶇鍚庢墠鑳藉畨瑁咃紙璇﹁鍚岀洰褰?README锛夈€?#
-# 涓や釜鍑哄彛锛屼换閫夊叾涓€锛?#   1. Actions 鈫?鏈杩愯 鈫?Artifacts 鈫?GoutouJunshi-unsigned-ipa
-#   2. 鍒嗘敮 unsigned-ipa锛坵orkflow 浼氭妸 ipa 鍗曠嫭鎻愪氦鍒颁竴涓?orphan 鍒嗘敮锛夛紝
-#      鍙洿鎺?https://codeload.github.com/<owner>/<repo>/zip/refs/heads/unsigned-ipa
-#      涓嬭浇 zip 鍚庤В鍘嬫嬁鍖?鈥斺€?缁?github.com 琚銆乷bjects.githubusercontent.com
-#      杩炰笉涓婄殑缃戠粶鐢ㄣ€?#
-# 宸叉寜 shengjidaguai-china/goutoujunshi-jev-chat 鐨勫疄闄呯粨鏋勯璁撅細
+# 放到仓库的：  .github/workflows/ios-unsigned-ipa.yml
+#
+# 产物：GoutouJunshi-unsigned.ipa（Payload/GoutouJunshi.app，arm64，device 构建）
+#       包本身不能直装 iPhone，需要 Sideloadly / AltStore 用你自己的 Apple ID
+#       重签后才能安装（详见同目录 README）。
+#
+# 两个出口，任选其一：
+#   1. Actions → 本次运行 → Artifacts → GoutouJunshi-unsigned-ipa
+#   2. 分支 unsigned-ipa（workflow 会把 ipa 单独提交到一个 orphan 分支），
+#      可直接 https://codeload.github.com/<owner>/<repo>/zip/refs/heads/unsigned-ipa
+#      下载 zip 后解压拿包 —— 给 github.com 被墙、objects.githubusercontent.com
+#      连不上的网络用。
+#
+# 已按 shengjidaguai-china/goutoujunshi-jev-chat 的实际结构预设：
 #   project = integrations/jev_ios/GoutouJunshi.xcodeproj
-#   scheme  = GoutouJunshi锛堜粨搴撻噷鍞竴鐨?shared scheme锛?# =============================================================================
+#   scheme  = GoutouJunshi（仓库里唯一的 shared scheme）
+# =============================================================================
 name: iOS unsigned IPA
 
 on:
   workflow_dispatch:
     inputs:
       project:
-        description: "xcodeproj 鐩稿璺緞"
+        description: "xcodeproj 相对路径"
         required: false
         default: "integrations/jev_ios/GoutouJunshi.xcodeproj"
       scheme:
-        description: "Xcode scheme锛堢暀绌哄垯鑷姩鎺㈡祴锛?
+        description: "Xcode scheme（留空则自动探测）"
         required: false
         default: "GoutouJunshi"
   push:
@@ -41,23 +47,24 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 45
     steps:
-      - name: 妫€鍑轰唬鐮?        uses: actions/checkout@v4
+      - name: 检出代码
+        uses: actions/checkout@v4
 
-      - name: 閫夌敤鏈€鏂扮殑 Xcode
+      - name: 选用最新的 Xcode
         shell: bash
         run: |
           set -euo pipefail
-          echo "--- 闀滃儚閲岄瑁呯殑 Xcode ---"
+          echo "--- 镜像里预装的 Xcode ---"
           ls -d /Applications/Xcode*.app || true
           latest="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort | tail -n 1 || true)"
           if [ -n "${latest}" ]; then
-            echo "鍒囨崲鍒?${latest}"
+            echo "切换到 ${latest}"
             sudo xcode-select -s "${latest}/Contents/Developer" || true
           fi
           xcodebuild -version
           xcodebuild -showsdks | grep -i "ios" || true
 
-      - name: 纭畾 project / scheme
+      - name: 确定 project / scheme
         id: probe
         shell: bash
         env:
@@ -67,7 +74,7 @@ jobs:
           set -euo pipefail
           PROJ="${PROJ_INPUT:-integrations/jev_ios/GoutouJunshi.xcodeproj}"
           if [ ! -d "${PROJ}" ]; then
-            echo "::error::鎵句笉鍒板伐绋嬬洰褰?${PROJ}"
+            echo "::error::找不到工程目录 ${PROJ}"
             exit 1
           fi
           SCHEME="${SCHEME_INPUT:-}"
@@ -78,10 +85,11 @@ jobs:
           [ -n "${SCHEME}" ] || SCHEME="GoutouJunshi"
           echo "project=${PROJ}" >> "${GITHUB_OUTPUT}"
           echo "scheme=${SCHEME}"  >> "${GITHUB_OUTPUT}"
-          echo "鏈浣跨敤锛?project=${PROJ}  scheme=${SCHEME}"
+          echo "本次使用： project=${PROJ}  scheme=${SCHEME}"
           xcodebuild -list -project "${PROJ}"
 
-      - name: 缂栬瘧锛堝叧闂唬鐮佺鍚嶏紝device / arm64锛?        shell: bash
+      - name: 编译（关闭代码签名，device / arm64）
+        shell: bash
         env:
           PROJ: ${{ steps.probe.outputs.project }}
           SCHEME: ${{ steps.probe.outputs.scheme }}
@@ -99,7 +107,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
-      - name: 缁勮 Payload 骞舵墦鍖?ipa
+      - name: 组装 Payload 并打包 ipa
         id: pack
         shell: bash
         run: |
@@ -107,14 +115,14 @@ jobs:
           PRODUCT_DIR="${RUNNER_TEMP}/dd/Build/Products/Release-iphoneos"
           APP="$(find "${PRODUCT_DIR}" -maxdepth 1 -name '*.app' -print -quit 2>/dev/null || true)"
           if [ -z "${APP}" ]; then
-            echo "::error::娌℃湁鎵惧埌 .app锛屼笅闈㈡槸浜х墿鐩綍锛?
+            echo "::error::没有找到 .app，下面是产物目录："
             ls -la "${PRODUCT_DIR}" || true
             exit 1
           fi
           APP_NAME="$(basename "${APP}" .app)"
-          echo "鎵惧埌 ${APP_NAME}.app"
-          echo "--- 鍐呭祵鎵╁睍 ---"
-          ls "${APP}/PlugIns" 2>/dev/null || echo "(娌℃湁 PlugIns 鐩綍)"
+          echo "找到 ${APP_NAME}.app"
+          echo "--- 内嵌扩展 ---"
+          ls "${APP}/PlugIns" 2>/dev/null || echo "(没有 PlugIns 目录)"
 
           STAGE="${RUNNER_TEMP}/stage"
           rm -rf "${STAGE}"
@@ -127,17 +135,17 @@ jobs:
           echo "ipa=${IPA}" >> "${GITHUB_OUTPUT}"
           echo "app_name=${APP_NAME}" >> "${GITHUB_OUTPUT}"
 
-          echo "--- ipa 缁撴瀯锛堝墠 20 琛岋級---"
+          echo "--- ipa 结构（前 20 行）---"
           unzip -l "${IPA}" | head -n 20
-          echo "--- 鍙墽琛屾枃浠舵灦鏋勶紙搴斾负 arm64锛?--"
+          echo "--- 可执行文件架构（应为 arm64）---"
           BIN="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${APP}/Info.plist")"
           file "${APP}/${BIN}" || true
-          echo "鏈€灏忕郴缁熺増鏈細"
+          echo "最小系统版本："
           /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "${APP}/Info.plist" || true
           shasum -a 256 "${IPA}"
           ls -lh "${IPA}"
 
-      - name: 涓婁紶 artifact
+      - name: 上传 artifact
         uses: actions/upload-artifact@v4
         with:
           name: GoutouJunshi-unsigned-ipa
@@ -145,12 +153,14 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: 鎶?ipa 鎺ㄥ埌 unsigned-ipa 鍒嗘敮锛堢粰鍙楅檺缃戠粶鐩存帴涓嬭浇锛?        if: success()
+      - name: 把 ipa 推到 unsigned-ipa 分支（给受限网络直接下载）
+        if: success()
         shell: bash
         env:
           IPA_PATH: ${{ steps.pack.outputs.ipa }}
           APP_NAME: ${{ steps.pack.outputs.app_name }}
-          # run 姝ラ閲屾病鏈夐粯璁ょ殑 GITHUB_TOKEN 鐜鍙橀噺锛屽繀椤绘樉寮忔槧灏?          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # run 步骤里没有默认的 GITHUB_TOKEN 环境变量，必须显式映射
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           OUT="${RUNNER_TEMP}/ipa-branch"
@@ -168,21 +178,21 @@ jobs:
           git commit -q -m "unsigned ipa $(date -u +%Y%m%dT%H%M%SZ)"
           if git push -q --force \
               "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" unsigned-ipa; then
-            echo "宸叉帹閫侊細https://codeload.github.com/${GITHUB_REPOSITORY}/zip/refs/heads/unsigned-ipa"
+            echo "已推送：https://codeload.github.com/${GITHUB_REPOSITORY}/zip/refs/heads/unsigned-ipa"
           else
-            # 鍒嗘敮鍙槸銆屽彈闄愮綉缁滀笅杞姐€嶇殑澶囩敤閫氶亾锛屽け璐ヤ笉褰卞搷 Artifacts 閲岀殑鎴愬搧
-            echo "::warning::鎺ㄩ€佸埌 unsigned-ipa 鍒嗘敮澶辫触锛岃鐢ㄦ湰娆¤繍琛岀殑 Artifacts 涓嬭浇"
+            # 分支只是「受限网络下载」的备用通道，失败不影响 Artifacts 里的成品
+            echo "::warning::推送到 unsigned-ipa 分支失败，请用本次运行的 Artifacts 下载"
           fi
 
-      - name: 缁撴灉鎽樿
+      - name: 结果摘要
         if: always()
         shell: bash
         run: |
           {
-            echo "### 鏋勫缓${{ job.status }}"
+            echo "### 构建${{ job.status }}"
             echo ""
-            echo "- App锛歕`${{ steps.pack.outputs.app_name }}\`"
-            echo "- 杩欎釜鍖呮槸**鏈鍚?*鐨勶紝涓嶈兘鐩存帴瀹夎鍒?iPhone銆?
-            echo "- 涓嬭浇锛氭湰娆¤繍琛?Artifacts锛屾垨鍒嗘敮 \`unsigned-ipa\` 鐨?zip銆?
-            echo "- 涓嬩竴姝ワ細Sideloadly 鐢ㄤ綘鐨?Apple ID 閲嶇瀹夎銆?
+            echo "- App：\`${{ steps.pack.outputs.app_name }}\`"
+            echo "- 这个包是**未签名**的，不能直接安装到 iPhone。"
+            echo "- 下载：本次运行 Artifacts，或分支 \`unsigned-ipa\` 的 zip。"
+            echo "- 下一步：Sideloadly 用你的 Apple ID 重签安装。"
           } >> "${GITHUB_STEP_SUMMARY}"
